@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Student Information System</title>
+  <style>
+    :root{--accent:#2563eb;--muted:#6b7280;--card:#ffffff;--bg:#f3f4f6}
+    *{box-sizing:border-box}
+    body{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; background:var(--bg); color:#111}
+    .container{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    button, .btn{background:var(--accent);color:white;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(37,99,235,.12)}
+    .card{background:var(--card);padding:16px;border-radius:12px;box-shadow:0 6px 18px rgba(15,23,42,.06)}
+
+    /* form */
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type=text], input[type=number], select{width:100%;padding:8px;border-radius:8px;border:1px solid #e6e7ea}
+
+    /* table */
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    thead th{background:#f8fafc;padding:10px;text-align:left;font-size:13px;color:#374151;border-bottom:1px solid #eee}
+    tbody td{padding:10px;border-bottom:1px solid #f1f5f9}
+    .actions{display:flex;gap:6px}
+    .pill{display:inline-block;padding:6px 8px;border-radius:999px;background:#eef2ff;color:#312e81;font-size:12px}
+
+    /* modal */
+    .modal-backdrop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,.45);z-index:50}
+    .modal{width:520px;background:white;border-radius:12px;padding:16px}
+
+    /* responsive */
+    @media (max-width:880px){.grid{grid-template-columns:repeat(2,1fr)}.modal{width:95%}}
+    @media (max-width:520px){.grid{grid-template-columns:1fr}header{flex-direction:column;align-items:flex-start;gap:8px}}
+
+    .small{font-size:13px;padding:6px 8px}
+    .danger{background:#ef4444}
+    .muted{color:var(--muted)}
+    .search{min-width:220px;padding:8px;border-radius:8px;border:1px solid #e6e7ea}
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Student Information System</h1>
+      <div class="controls">
+        <input id="searchInput" class="search" placeholder="Search by name, id or course" />
+        <select id="filterCourse">
+          <option value="">All Courses</option>
+        </select>
+        <button id="addBtn" class="btn">+ Add Student</button>
+        <button id="exportBtn" class="ghost">Export CSV</button>
+        <button id="importBtn" class="ghost">Import CSV</button>
+        <input id="importFile" type="file" accept="text/csv" style="display:none" />
+      </div>
+    </header>
+
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Students</strong>
+        <div class="muted small">Total: <span id="total">0</span></div>
+      </div>
+
+      <table id="studentsTable">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="selectAll" /></th>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Age</th>
+            <th>Course</th>
+            <th>Grade</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- rows injected by JS -->
+        </tbody>
+      </table>
+
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button id="deleteSelected" class="danger small">Delete Selected</button>
+        <button id="clearAll" class="small ghost">Clear All</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal -->
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 id="modalTitle">Add Student</h3>
+      <form id="studentForm">
+        <div class="grid">
+          <div>
+            <label for="sid">Student ID</label>
+            <input type="text" id="sid" required />
+          </div>
+          <div>
+            <label for="name">Full name</label>
+            <input type="text" id="name" required />
+          </div>
+          <div>
+            <label for="age">Age</label>
+            <input type="number" id="age" min="1" required />
+          </div>
+          <div>
+            <label for="course">Course</label>
+            <input type="text" id="course" required />
+          </div>
+          <div>
+            <label for="grade">Grade</label>
+            <select id="grade">
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+              <option value="F">F</option>
+            </select>
+          </div>
+          <div>
+            <label for="notes">Notes</label>
+            <input type="text" id="notes" />
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+          <button type="button" id="cancelBtn" class="ghost">Cancel</button>
+          <button type="submit" class="btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Simple Student Information System - vanilla JS + localStorage
+    const STORAGE_KEY = 'sis_students_v1';
+
+    // DOM
+    const addBtn = document.getElementById('addBtn');
+    const modal = document.getElementById('modalBackdrop');
+    const studentForm = document.getElementById('studentForm');
+    const modalTitle = document.getElementById('modalTitle');
+    const studentsTableBody = document.querySelector('#studentsTable tbody');
+    const totalEl = document.getElementById('total');
+    const searchInput = document.getElementById('searchInput');
+    const filterCourse = document.getElementById('filterCourse');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const importFile = document.getElementById('importFile');
+    const deleteSelected = document.getElementById('deleteSelected');
+    const clearAll = document.getElementById('clearAll');
+    const selectAll = document.getElementById('selectAll');
+
+    let students = loadStudents();
+    let editingId = null;
+
+    // initial render
+    renderTable();
+    populateCourseFilter();
+
+    // events
+    addBtn.addEventListener('click', () => openModal());
+    modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(); });
+    document.getElementById('cancelBtn').addEventListener('click', closeModal);
+
+    studentForm.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const s = readForm();
+      if(!validateStudent(s)) return;
+      if(editingId){ updateStudent(editingId, s); }
+      else{ addStudent(s); }
+      saveStudents();
+      closeModal();
+      renderTable();
+      populateCourseFilter();
+    });
+
+    searchInput.addEventListener('input', renderTable);
+    filterCourse.addEventListener('change', renderTable);
+    exportBtn.addEventListener('click', exportCSV);
+    importBtn.addEventListener('click', ()=>importFile.click());
+    importFile.addEventListener('change', handleImportFile);
+    deleteSelected.addEventListener('click', handleDeleteSelected);
+    clearAll.addEventListener('click', handleClearAll);
+    selectAll.addEventListener('change', handleSelectAll);
+
+    // functions
+    function loadStudents(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(!raw) return sampleData();
+        return JSON.parse(raw);
+      }catch(e){return sampleData();}
+    }
+
+    function saveStudents(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
+    }
+
+    function sampleData(){
+      return [
+        {id:'S1001', name:'Aarav Sharma', age:19, course:'B.Tech CSE', grade:'A', notes:''},
+        {id:'S1002', name:'Priya Singh', age:20, course:'B.Sc Mathematics', grade:'B', notes:''}
+      ];
+    }
+
+    function renderTable(){
+      const q = searchInput.value.trim().toLowerCase();
+      const courseFilter = filterCourse.value;
+      const rows = students.filter(s => {
+        if(courseFilter && s.course !== courseFilter) return false;
+        if(!q) return true;
+        return [s.id, s.name, s.course, s.grade, (s.notes||'')].join(' ').toLowerCase().includes(q);
+      });
+
+      studentsTableBody.innerHTML = '';
+      rows.forEach(s => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input data-id="${s.id}" class="rowCheck" type="checkbox" /></td>
+          <td>${escapeHtml(s.id)}</td>
+          <td>${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(String(s.age))}</td>
+          <td><span class="pill">${escapeHtml(s.course)}</span></td>
+          <td>${escapeHtml(s.grade)}</td>
+          <td>
+            <div class="actions">
+              <button class="small" data-action="edit" data-id="${s.id}">Edit</button>
+              <button class="small ghost" data-action="copy" data-id="${s.id}">Copy</button>
+              <button class="small danger" data-action="delete" data-id="${s.id}">Del</button>
+            </div>
+          </td>
+        `;
+        studentsTableBody.appendChild(tr);
+      });
+
+      totalEl.textContent = students.length;
+
+      // attach action handlers
+      studentsTableBody.querySelectorAll('[data-action]').forEach(btn=>{
+        btn.addEventListener('click', (e)=>{
+          const action = btn.getAttribute('data-action');
+          const id = btn.getAttribute('data-id');
+          if(action==='edit') startEdit(id);
+          if(action==='copy') copyToClipboard(id);
+          if(action==='delete') removeStudent(id);
+        });
+      });
+
+      studentsTableBody.querySelectorAll('.rowCheck').forEach(cb=>cb.addEventListener('change', ()=>{
+        // sync select all
+        const all = document.querySelectorAll('.rowCheck');
+        const checked = document.querySelectorAll('.rowCheck:checked');
+        selectAll.checked = all.length>0 && checked.length===all.length;
+      }));
+    }
+
+    function openModal(){
+      editingId = null; modalTitle.textContent = 'Add Student';
+      studentForm.reset(); document.getElementById('sid').disabled = false;
+      modal.style.display = 'flex';
+    }
+    function closeModal(){ modal.style.display = 'none'; }
+
+    function readForm(){
+      return {
+        id: document.getElementById('sid').value.trim(),
+        name: document.getElementById('name').value.trim(),
+        age: Number(document.getElementById('age').value),
+        course: document.getElementById('course').value.trim(),
+        grade: document.getElementById('grade').value,
+        notes: document.getElementById('notes').value.trim()
+      };
+    }
+
+    function validateStudent(s){
+      if(!s.id || !s.name) { alert('ID and Name are required'); return false; }
+      if(isNaN(s.age) || s.age<=0){ alert('Age must be a positive number'); return false; }
+      return true;
+    }
+
+    function addStudent(s){
+      if(students.some(x=>x.id===s.id)){ alert('Student ID already exists'); return; }
+      students.push(s);
+    }
+
+    function updateStudent(id,s){
+      const idx = students.findIndex(x=>x.id===id);
+      if(idx===-1) return;
+      // if id changed and conflicts
+      if(s.id !== id && students.some(x=>x.id===s.id)){ alert('Student ID already exists'); return; }
+      students[idx] = s;
+    }
+
+    function startEdit(id){
+      const s = students.find(x=>x.id===id); if(!s) return;
+      editingId = id; modalTitle.textContent = 'Edit Student';
+      document.getElementById('sid').value = s.id; document.getElementById('sid').disabled = true;
+      document.getElementById('name').value = s.name;
+      document.getElementById('age').value = s.age;
+      document.getElementById('course').value = s.course;
+      document.getElementById('grade').value = s.grade;
+      document.getElementById('notes').value = s.notes || '';
+      modal.style.display = 'flex';
+    }
+
+    function removeStudent(id){
+      if(!confirm('Delete student '+id+'?')) return;
+      students = students.filter(s=>s.id!==id);
+      saveStudents(); renderTable(); populateCourseFilter();
+    }
+
+    function handleDeleteSelected(){
+      const checked = Array.from(document.querySelectorAll('.rowCheck:checked')).map(i=>i.dataset.id);
+      if(checked.length===0){ alert('No students selected'); return; }
+      if(!confirm('Delete '+checked.length+' selected students?')) return;
+      students = students.filter(s=>!checked.includes(s.id));
+      saveStudents(); renderTable(); populateCourseFilter();
+    }
+
+    function handleClearAll(){ if(!confirm('Clear all students?')) return; students = []; saveStudents(); renderTable(); populateCourseFilter(); }
+
+    function handleSelectAll(){ const val = selectAll.checked; document.querySelectorAll('.rowCheck').forEach(cb=>cb.checked=val); }
+
+    function copyToClipboard(id){
+      const s = students.find(x=>x.id===id); if(!s) return; const text = JSON.stringify(s, null, 2);
+      navigator.clipboard?.writeText(text).then(()=>alert('Copied to clipboard'));
+    }
+
+    function populateCourseFilter(){
+      const courses = Array.from(new Set(students.map(s=>s.course))).sort();
+      filterCourse.innerHTML = '<option value="">All Courses</option>' + courses.map(c=>`<option>${escapeHtml(c)}</option>`).join('');
+    }
+
+    function exportCSV(){
+      if(students.length===0){ alert('No data to export'); return; }
+      const rows = [ ['id','name','age','course','grade','notes'], ...students.map(s=>[s.id,s.name,s.age,s.course,s.grade,s.notes||'']) ];
+      const csv = rows.map(r=>r.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'students.csv'; a.click(); URL.revokeObjectURL(url);
+    }
+
+    function handleImportFile(e){
+      const f = e.target.files[0]; if(!f) return; const reader = new FileReader();
+      reader.onload = (ev)=>{
+        try{
+          const text = ev.target.result;
+          parseCSV(text).forEach(row=>{
+            // expect header row id,name,age,course,grade,notes
+            if(!row.id) return; if(students.some(s=>s.id===row.id)) return; students.push(row);
+          });
+          saveStudents(); renderTable(); populateCourseFilter(); alert('Import complete');
+        }catch(err){ alert('Failed to import: '+err.message); }
+      };
+      reader.readAsText(f);
+      importFile.value = '';
+    }
+
+    function parseCSV(text){
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if(lines.length===0) return [];
+      const header = splitCSVLine(lines[0]).map(h=>h.trim().toLowerCase());
+      const out = [];
+      for(let i=1;i<lines.length;i++){
+        const vals = splitCSVLine(lines[i]); if(vals.length===0) continue;
+        const obj = {};
+        header.forEach((h,idx)=>{
+          const v = vals[idx] ?? '';
+          if(h==='age') obj[h] = Number(v) || 0; else obj[h] = v;
+        });
+        out.push({id:obj['id'], name:obj['name'], age:obj['age']||0, course:obj['course']||'', grade:obj['grade']||'', notes:obj['notes']||''});
+      }
+      return out;
+    }
+
+    // safe CSV split (handles quoted commas)
+    function splitCSVLine(line){
+      const res = []; let cur=''; let inQuotes=false;
+      for(let i=0;i<line.length;i++){
+        const ch = line[i];
+        if(ch==='"') { if(inQuotes && line[i+1]==='"'){ cur += '"'; i++; } else inQuotes = !inQuotes; continue; }
+        if(ch===',' && !inQuotes){ res.push(cur); cur=''; continue; }
+        cur += ch;
+      }
+      res.push(cur);
+      return res.map(s=>s.trim());
+    }
+
+    function escapeHtml(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  </script>
+</body>
+</html>
